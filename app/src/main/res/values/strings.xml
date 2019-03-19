@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">耗电记录仪</string>
+    <string name="startService">开始记录</string>
+    <string name="stopService">停止记录</string>
+    <string name="saveLog">保存记录</string>
+    <string name="notRunning">未开始记录</string>
+    <string name="appwidget_text">耗电记录仪</string>
+    <string name="add_widget">Add widget</string>
+</resources>
