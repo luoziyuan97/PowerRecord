@@ -19,6 +19,7 @@ import android.os.Process;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -50,9 +51,8 @@ import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Scanner;
-
-import pub.devrel.easypermissions.EasyPermissions;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -70,6 +70,7 @@ public class MainActivity extends AppCompatActivity {
     private int numOfCpus;
 
     private Button startServiceButton;
+    private Button powerListButton;
     private Button stopServiceButton;
     private Button saveLogButton;
 
@@ -80,6 +81,7 @@ public class MainActivity extends AppCompatActivity {
     private BatteryStatsHelper batteryStatsHelper;
 
     private SparseArray<String> packageNames;
+    private List<PowerRecord> powerRecords;
 
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
@@ -90,8 +92,8 @@ public class MainActivity extends AppCompatActivity {
         batteryStatsHelper.create(savedInstanceState);
 
         //运行时申请存储权限
-        EasyPermissions.requestPermissions(this, "申请权限", 0,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 0);
 
         //获取CPU个数
         numOfCpus = Runtime.getRuntime().availableProcessors();
@@ -101,10 +103,10 @@ public class MainActivity extends AppCompatActivity {
         startServiceButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!hasUsageAccess())
+                if (!hasBatteryStatsPermission())
                 {
-                    Toast.makeText(MainActivity.this, "未获取查看使用情况权限，" +
-                            "请点击右上角菜单->打开使用情况设置进行授权", Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "未获取耗电统计权限",
+                            Toast.LENGTH_LONG).show();
                     return;
                 }
 
@@ -113,6 +115,7 @@ public class MainActivity extends AppCompatActivity {
                 startService(intent);
                 bindService(intent, connection, 0);
                 startServiceButton.setEnabled(false);
+                powerListButton.setEnabled(true);
                 stopServiceButton.setEnabled(true);
                 saveLogButton.setEnabled(false);
 
@@ -120,6 +123,18 @@ public class MainActivity extends AppCompatActivity {
                 String text = "正在记录...\n" + "开始时间:" +
                         dateFormat.format(System.currentTimeMillis());
                 mainText.setText(text);
+            }
+        });
+
+        //耗电排行按钮
+        powerListButton = findViewById(R.id.powerListButton);
+        powerListButton.setEnabled(false);
+        powerListButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this,
+                        PowerListActivity.class);
+                startActivity(intent);
             }
         });
 
@@ -139,6 +154,7 @@ public class MainActivity extends AppCompatActivity {
                 myBinder = null;
 
                 startServiceButton.setEnabled(true);
+                powerListButton.setEnabled(false);
                 stopServiceButton.setEnabled(false);
                 saveLogButton.setEnabled(true);
 
@@ -213,6 +229,7 @@ public class MainActivity extends AppCompatActivity {
 
                     return;
                 } catch(IOException e) {
+                    Log.d(TAG, "failed to write log");
                 }
 
                 String text = "无法保存日志到SD卡，请检查应用是否拥有存储权限";
@@ -500,8 +517,8 @@ public class MainActivity extends AppCompatActivity {
             {
                 Log.d(TAG, "option item test");
 
-                if (EasyPermissions.hasPermissions(MainActivity.this,
-                        Manifest.permission.BATTERY_STATS))
+//                if (EasyPermissions.hasPermissions(MainActivity.this,
+//                        Manifest.permission.BATTERY_STATS))
                     Log.d(TAG, "BATTERY_STATS permission granted!");
 
                 batteryStatsHelper.clearStats();
@@ -538,8 +555,11 @@ public class MainActivity extends AppCompatActivity {
                                            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         Log.d(TAG, "onRequestPermissionsResult()");
-        EasyPermissions.onRequestPermissionsResult(requestCode, permissions, grantResults,
-                this);
+
+        if (requestCode == 0)
+            if (grantResults[0] != PackageManager.PERMISSION_GRANTED)
+                Toast.makeText(this, "未授予存储权限，将无法保存记录文件",
+                        Toast.LENGTH_SHORT).show();
     }
 
     //判断手机是否具有查看使用情况设置
@@ -566,6 +586,13 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    //检查是否获取了BATTERY_STATS权限
+    private boolean hasBatteryStatsPermission()
+    {
+        return ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.BATTERY_STATS) == PackageManager.PERMISSION_GRANTED;
+    }
+
     //匿名内部类，服务连接对象
     private ServiceConnection connection = new ServiceConnection() {
 
@@ -580,6 +607,7 @@ public class MainActivity extends AppCompatActivity {
             if (myBinder.isRunning())
             {
                 startServiceButton.setEnabled(false);
+                powerListButton.setEnabled(true);
                 stopServiceButton.setEnabled(true);
 
                 SimpleDateFormat dateFormat = new SimpleDateFormat(

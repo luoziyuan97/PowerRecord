@@ -9,13 +9,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.PermissionInfo;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
 import android.os.BatteryStats;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
-import android.os.Process;
 import android.os.UserHandle;
 import android.support.annotation.Nullable;
 import android.util.Log;
@@ -31,6 +30,7 @@ import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -58,17 +58,19 @@ public class MyService extends Service {
     private long startTime;             //服务开始时间，单位ms
     private long runningTime = 0;       //服务运行时间，单位s
 
-    private int interval = 1;
+    private int interval = 1;           //取样间隔，单位s
 
     private DecimalFormat twoDecimalPlaces = new DecimalFormat("0.00");
     private DecimalFormat fourDecimalPlaces = new DecimalFormat("0.0000");
 
     private PackageManager packageManager;
-    private SparseArray<String> packageNames;
-    private SparseArray<String> systemApps;
+    private SparseArray<String> packageNames;           //过滤掉系统应用(两类)之后的uid与包名映射
+    private SparseArray<String> systemApps;             //uid大于10000的系统应用的uid与包名映射
+    private SparseArray<PowerRecord> powerRecords;      //过滤掉系统应用之后的uid与PowerRecord映射
 
     private BatteryStatsHelper batteryStatsHelper;
     private List<BatterySipper> usageList;
+    private List<PowerRecord> powerRecordList;      //过滤掉未启动应用的PowerRecord列表，用于展示
 
     @Nullable
     @Override
@@ -88,6 +90,8 @@ public class MyService extends Service {
         packageManager = getPackageManager();
         packageNames = new SparseArray<>();
         systemApps = new SparseArray<>();
+        powerRecords = new SparseArray<>();
+        powerRecordList = new LinkedList<>();
     }
 
     @Override
@@ -306,7 +310,7 @@ public class MyService extends Service {
 
                 //刷新系统耗电记录信息
                 batteryStatsHelper.clearStats();
-                batteryStatsHelper.refreshStats(BatteryStats.STATS_SINCE_UNPLUGGED,
+                batteryStatsHelper.refreshStats(BatteryStats.STATS_CURRENT,
                         UserHandle.USER_ALL);
                 usageList = batteryStatsHelper.getUsageList();
 
@@ -334,14 +338,38 @@ public class MyService extends Service {
                             } catch (PackageManager.NameNotFoundException e) {
                                 Log.d(TAG, "application not found");
                             }
-                            if (!applicationInfo.isSystemApp())
-                                packageNames.put(usage.getUid(), packageName);
-                            else
+                            //uid大于10000的系统应用，存入systemApps并忽略
+                            if (applicationInfo.isSystemApp())
                             {
                                 systemApps.put(usage.getUid(), packageName);
                                 continue;
+
+                            }
+                            //普通应用
+                            else
+                            {
+                                //存入uid和包名映射
+                                packageNames.put(usage.getUid(), packageName);
+                                Drawable icon = null;
+                                try {
+                                    icon = packageManager.getApplicationIcon(packageName);
+                                } catch (PackageManager.NameNotFoundException e) {
+                                    Log.d(TAG, "icon not found");
+                                }
+                                //创建PowerRecord并添加到powerRecord映射
+                                PowerRecord powerRecord = new PowerRecord(usage.getUid(),
+                                        packageName, icon, usage);
+                                CharSequence label;
+                                label = packageManager.getApplicationLabel(applicationInfo);
+                                if (label != null)
+                                    powerRecord.label = packageManager.getApplicationLabel(
+                                            applicationInfo).toString();
+                                else
+                                    powerRecord.label = "UNKNOWN";
+                                powerRecords.put(usage.getUid(), powerRecord);
                             }
                         }
+                        //忽略uid大于10000且获取不到包名的普通应用（虽然不大可能出现）
                         else
                             continue;
                     }
@@ -349,13 +377,46 @@ public class MyService extends Service {
                     //获取应用耗电信息，忽略耗电量过低的应用
                     if (usage.totalPowerMah > 0.01)
                     {
-                        writeString.append("uid : ");
-                        writeString.append(usage.getUid());
-                        writeString.append(", power : ");
-                        writeString.append(twoDecimalPlaces.format(usage.totalPowerMah));
-                        writeString.append("\n");
+                        PowerRecord powerRecord = powerRecords.get(usage.getUid());
+                        if (powerRecord.isRunning)
+                        {
+                            //更新PowerRecord
+                            powerRecord.updatePower(usage);
+
+                            writeString.append("uid : ");
+                            writeString.append(usage.getUid());
+                            writeString.append(", power : ");
+                            writeString.append(fourDecimalPlaces.
+                                    format(powerRecord.totalPower[PowerRecord.ALL]));
+                            writeString.append(", lastIntervalPower : ");
+                            writeString.append(fourDecimalPlaces.
+                                    format(powerRecord.lastIntervalPower[PowerRecord.ALL]));
+                            writeString.append("\n");
+                        }
+                        else
+                        {
+                            //如果当前获取到的该应用耗电值大于首次获取到的耗电量，视为应用启动
+                            //添加到展示列表
+                            if (usage.totalPowerMah > powerRecord.startPower[PowerRecord.ALL])
+                            {
+                                powerRecord.isRunning = true;
+                                powerRecordList.add(powerRecord);
+                            }
+                        }
                     }
                 }
+
+                //按照总耗电量的高低降序排列
+                Collections.sort(powerRecordList, new Comparator<PowerRecord>() {
+                    @Override
+                    public int compare(PowerRecord o1, PowerRecord o2) {
+                        if (o1.totalPower[PowerRecord.ALL] > o2.totalPower[PowerRecord.ALL])
+                            return -1;
+                        else if (o1.totalPower[PowerRecord.ALL] < o2.totalPower[PowerRecord.ALL])
+                            return 1;
+                        return 0;
+                    }
+                });
 
                 Log.d(TAG, writeString.toString());
                 try {
@@ -440,6 +501,16 @@ public class MyService extends Service {
         public SparseArray<String> getPackageNames()
         {
             return packageNames;
+        }
+
+        public List<PowerRecord> getPowerRecordList()
+        {
+            return powerRecordList;
+        }
+
+        public int getInterval()
+        {
+            return interval;
         }
     }
 

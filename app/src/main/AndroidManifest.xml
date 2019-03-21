@@ -3,7 +3,7 @@
     package="com.luoziyuan.powerrecord">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.BATTERY_STATS" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -37,6 +37,8 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/my_app_widget_info" />
         </receiver>
+
+        <activity android:name=".PowerListActivity" />
     </application>
 
 </manifest>
