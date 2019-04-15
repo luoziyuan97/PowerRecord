@@ -1,4 +1,4 @@
-package com.luoziyuan.powerrecord;
+package com.luoziyuan.powerrecord.adaptor;
 
 import android.content.Context;
 import android.view.View;
@@ -7,6 +7,9 @@ import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.luoziyuan.powerrecord.data.PowerRecord;
+import com.luoziyuan.powerrecord.R;
+
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -14,13 +17,13 @@ import java.util.Locale;
  * Created by John on 2019/3/20.
  */
 
-public class PowerListAdapter extends BaseAdapter {
+public class PowerListAdaptor extends BaseAdapter {
 
     private Context context;
     private ArrayList<PowerRecord> data;
 
     @SuppressWarnings("unchecked")
-    public PowerListAdapter(Context context, ArrayList<PowerRecord> data)
+    public PowerListAdaptor(Context context, ArrayList<PowerRecord> data)
     {
         this.context = context;
         this.data = (ArrayList<PowerRecord>) data.clone();

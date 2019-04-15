@@ -3,6 +3,7 @@ package com.luoziyuan.powerrecord;
 import android.Manifest;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
+import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
+import android.graphics.Color;
 import android.os.BatteryStats;
 import android.os.Environment;
 import android.os.IBinder;
@@ -28,6 +30,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
+import android.widget.RemoteViews;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -80,7 +83,8 @@ public class MainActivity extends AppCompatActivity {
 
     private BatteryStatsHelper batteryStatsHelper;
 
-    private SparseArray<String> packageNames;
+    private SparseArray<String> packageNames;           //uid与包名映射，写入到正式记录开头
+    private SparseArray<String> appNames;               //uid与应用名映射，写入到正式记录开头
     private List<PowerRecord> powerRecords;
 
     @Override
@@ -103,6 +107,7 @@ public class MainActivity extends AppCompatActivity {
         startServiceButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                //检测是否具有耗电统计权限
                 if (!hasBatteryStatsPermission())
                 {
                     Toast.makeText(MainActivity.this, "未获取耗电统计权限",
@@ -110,19 +115,35 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
 
+                //启动服务并绑定
                 Intent intent = new Intent(MainActivity.this, MyService.class);
                 intent.putExtra("icircle", savedInstanceState);
                 startService(intent);
                 bindService(intent, connection, 0);
+
+                //更新按钮状态
                 startServiceButton.setEnabled(false);
                 powerListButton.setEnabled(true);
                 stopServiceButton.setEnabled(true);
                 saveLogButton.setEnabled(false);
 
+                //更新提示信息
                 SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
                 String text = "正在记录...\n" + "开始时间:" +
                         dateFormat.format(System.currentTimeMillis());
                 mainText.setText(text);
+
+                //更新AppWidget
+                ComponentName componentName = new ComponentName(MainActivity.this,
+                        MyAppWidget.class);
+                RemoteViews remoteViews = new RemoteViews(MainActivity.this.getPackageName(),
+                        R.layout.my_app_widget);
+                remoteViews.setTextViewText(R.id.appwidget_stateText, "正在记录...");
+                remoteViews.setTextColor(R.id.appwidget_stateText, Color.BLACK);
+
+                AppWidgetManager appWidgetManager = AppWidgetManager.
+                        getInstance(getApplicationContext());
+                appWidgetManager.updateAppWidget(componentName, remoteViews);
             }
         });
 
@@ -144,8 +165,10 @@ public class MainActivity extends AppCompatActivity {
         stopServiceButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                //保存本次记录涉及的uid和包名映射
+
+                //保存本次记录涉及的uid和包名、应用名映射
                 packageNames = myBinder.getPackageNames();
+                appNames = myBinder.getAppNames();
 
                 //停止服务
                 Intent intent = new Intent(MainActivity.this, MyService.class);
@@ -153,13 +176,28 @@ public class MainActivity extends AppCompatActivity {
                 unbindService(connection);
                 myBinder = null;
 
+                //更新按钮状态
                 startServiceButton.setEnabled(true);
+                startServiceButton.setText("重新开始");
                 powerListButton.setEnabled(false);
                 stopServiceButton.setEnabled(false);
                 saveLogButton.setEnabled(true);
 
+                //更新提示信息
                 String text = "记录完成\n请及时保存记录！\n一旦关闭应用记录将丢失！";
                 mainText.setText(text);
+
+                //更新AppWidget
+                ComponentName componentName = new ComponentName(MainActivity.this,
+                        MyAppWidget.class);
+                RemoteViews remoteViews = new RemoteViews(MainActivity.this.getPackageName(),
+                        R.layout.my_app_widget);
+                remoteViews.setTextViewText(R.id.appwidget_stateText, "未运行");
+                remoteViews.setTextColor(R.id.appwidget_stateText, Color.GRAY);
+
+                AppWidgetManager appWidgetManager = AppWidgetManager.
+                        getInstance(getApplicationContext());
+                appWidgetManager.updateAppWidget(componentName, remoteViews);
             }
         });
 
@@ -169,72 +207,88 @@ public class MainActivity extends AppCompatActivity {
         saveLogButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                //获取临时记录文件
-                String tempLogFilePath = getFileStreamPath("temp.log").getAbsolutePath();
-                FileInputStream inputStream;
-                try {
-                    inputStream = new FileInputStream(tempLogFilePath);
-                } catch (FileNotFoundException e) {
-                    Toast.makeText(MainActivity.this, "未找到记录", Toast.LENGTH_LONG)
-                            .show();
-                    return;
-                }
 
-                //创建新记录文件
-                SimpleDateFormat dateFormat = new SimpleDateFormat(
-                        "yyyy-MM-dd_HH-mm-ss");
-                long time = System.currentTimeMillis();
-                File writeFile = new File(
-                        Environment.getExternalStorageDirectory(), "PowerLog" +
-                        dateFormat.format(time) + ".log");
+                mainText.setText("正在保存记录...");
 
-                //写入记录
-                try {
-                    BufferedInputStream logIn = new BufferedInputStream(inputStream);
-                    BufferedOutputStream logOut = new BufferedOutputStream(
-                            new FileOutputStream(writeFile));
+                //创建新的线程保存记录文件
+                new Thread() {
 
-                    //在记录开始部分写入涉及的uid和包名映射
-                    StringBuilder writeString = new StringBuilder();
-                    for (int i = 0; i < packageNames.size(); i++)
-                    {
-                        writeString.append("uid : ");
-                        writeString.append(packageNames.keyAt(i));
-                        writeString.append(", package : ");
-                        writeString.append(packageNames.valueAt(i));
-                        writeString.append("\n");
+                    String resultInfo = "无法保存日志到SD卡，请检查应用是否拥有存储权限";
+
+                    @Override
+                    public void run() {
+                        //获取临时记录文件
+                        String tempLogFilePath = getFileStreamPath("temp.log").getAbsolutePath();
+                        FileInputStream inputStream;
+                        try {
+                            inputStream = new FileInputStream(tempLogFilePath);
+                        } catch (FileNotFoundException e) {
+                            Toast.makeText(MainActivity.this, "未找到记录", Toast.LENGTH_LONG)
+                                    .show();
+                            return;
+                        }
+
+                        //创建新记录文件
+                        SimpleDateFormat dateFormat = new SimpleDateFormat(
+                                "yyyy-MM-dd_HH-mm-ss");
+                        long time = System.currentTimeMillis();
+                        File writeFile = new File(
+                                Environment.getExternalStorageDirectory(), "PowerLog" +
+                                dateFormat.format(time) + ".log");
+
+                        //写入记录
+                        try {
+                            BufferedInputStream logIn = new BufferedInputStream(inputStream);
+                            BufferedOutputStream logOut = new BufferedOutputStream(
+                                    new FileOutputStream(writeFile));
+
+                            //在记录开始部分写入涉及的uid和包名、应用名映射
+                            StringBuilder writeString = new StringBuilder();
+                            for (int i = 0; i < packageNames.size(); i++)
+                            {
+                                int uid = packageNames.keyAt(i);
+                                writeString.append("uid : ");
+                                writeString.append(uid);
+                                writeString.append(", package : ");
+                                writeString.append(packageNames.get(uid));
+                                writeString.append(", app : ");
+                                Log.d(TAG, "length : " + writeString.length());
+                                writeString.append(appNames.get(uid));
+                                Log.d(TAG, appNames.get(uid));
+                                Log.d(TAG, "length : " + writeString.length());
+                                writeString.append("\n");
+                            }
+                            writeString.append("\n");
+                            byte[] writeBytes = writeString.toString().getBytes();
+                            logOut.write(writeBytes, 0, writeBytes.length);
+
+                            //先读临时记录文件，再写入要保存的文件
+                            byte[] buffer = new byte[20480];
+                            for(int len = logIn.read(buffer); len != -1; len = logIn.read(buffer))
+                            {
+                                logOut.write(buffer, 0, len);
+                            }
+
+                            logIn.close();
+                            logOut.close();
+
+                            resultInfo = "成功保存日志到:" + writeFile.getAbsolutePath();
+                        } catch(java.io.EOFException e) {
+                            resultInfo = "成功保存日志到:" + writeFile.getAbsolutePath();
+                        } catch(IOException e) {
+                            Log.d(TAG, "failed to write log");
+                        }
+
+                        //刷新提示信息
+                        MainActivity.this.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                mainText.setText(resultInfo);
+                                saveLogButton.setEnabled(false);
+                            }
+                        });
                     }
-                    writeString.append("\n");
-                    logOut.write(writeString.toString().getBytes(), 0, writeString.length());
-
-                    //先读临时记录文件，再写入要保存的文件
-                    byte[] buffer = new byte[20480];
-                    for(int len = logIn.read(buffer); len != -1; len = logIn.read(buffer))
-                    {
-                        logOut.write(buffer, 0, len);
-                    }
-
-                    logIn.close();
-                    logOut.close();
-
-                    String text = "成功保存日志到:" + writeFile.getAbsolutePath();
-                    mainText.setText(text);
-                    saveLogButton.setEnabled(false);
-
-                    return;
-                } catch(java.io.EOFException e) {
-                    String text = "成功保存日志到:" + writeFile.getAbsolutePath();
-                    mainText.setText(text);
-                    saveLogButton.setEnabled(false);
-
-                    return;
-                } catch(IOException e) {
-                    Log.d(TAG, "failed to write log");
-                }
-
-                String text = "无法保存日志到SD卡，请检查应用是否拥有存储权限";
-                mainText.setText(text);
-                writeFile.delete();
+                }.start();
             }
         });
 

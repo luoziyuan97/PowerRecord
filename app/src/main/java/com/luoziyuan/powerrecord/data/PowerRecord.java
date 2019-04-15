@@ -1,6 +1,7 @@
-package com.luoziyuan.powerrecord;
+package com.luoziyuan.powerrecord.data;
 
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 
 import com.android.internal.os.BatterySipper;
 
@@ -47,7 +48,9 @@ public class PowerRecord implements Cloneable
         startPower[WAKELOCK] = usage.wakeLockPowerMah;
         startPower[MOBILE_RADIO] = usage.mobileRadioPowerMah;
         startPower[WIFI] = usage.wifiPowerMah;
-        startPower[BLUETOOTH] = usage.bluetoothPowerMah;
+        //Android 7.0及以上才有蓝牙耗电数据
+        if (Build.VERSION.SDK_INT >= 24)
+            startPower[BLUETOOTH] = usage.bluetoothPowerMah;
         startPower[SENSOR] = usage.sensorPowerMah;
         startPower[CAMERA] = usage.cameraPowerMah;
         startPower[FLASHLIGHT] = usage.flashlightPowerMah;
@@ -66,8 +69,10 @@ public class PowerRecord implements Cloneable
         lastIntervalPower[MOBILE_RADIO] = usage.mobileRadioPowerMah - totalPower[MOBILE_RADIO]
                 - startPower[MOBILE_RADIO];
         lastIntervalPower[WIFI] = usage.wifiPowerMah - totalPower[WIFI] - startPower[WIFI];
-        lastIntervalPower[BLUETOOTH] = usage.bluetoothPowerMah - totalPower[BLUETOOTH]
-                - startPower[BLUETOOTH];
+        //Android 7.0及以上才有蓝牙耗电数据
+        if (Build.VERSION.SDK_INT >= 24)
+            lastIntervalPower[BLUETOOTH] = usage.bluetoothPowerMah - totalPower[BLUETOOTH]
+                    - startPower[BLUETOOTH];
         lastIntervalPower[SENSOR] = usage.sensorPowerMah - totalPower[SENSOR] - startPower[SENSOR];
         lastIntervalPower[CAMERA] = usage.cameraPowerMah - totalPower[CAMERA] - startPower[CAMERA];
         lastIntervalPower[FLASHLIGHT] = usage.flashlightPowerMah - totalPower[FLASHLIGHT]
@@ -82,14 +87,16 @@ public class PowerRecord implements Cloneable
         totalPower[WAKELOCK] = usage.wakeLockPowerMah - startPower[WAKELOCK];
         totalPower[MOBILE_RADIO] = usage.mobileRadioPowerMah - startPower[MOBILE_RADIO];
         totalPower[WIFI] = usage.wifiPowerMah - startPower[WIFI];
-        totalPower[BLUETOOTH] = usage.bluetoothPowerMah - startPower[BLUETOOTH];
+        //Android 7.0及以上才有蓝牙耗电数据
+        if (Build.VERSION.SDK_INT >= 24)
+            totalPower[BLUETOOTH] = usage.bluetoothPowerMah - startPower[BLUETOOTH];
         totalPower[SENSOR] = usage.sensorPowerMah - startPower[SENSOR];
         totalPower[CAMERA] = usage.cameraPowerMah - startPower[CAMERA];
         totalPower[FLASHLIGHT] = usage.flashlightPowerMah - startPower[FLASHLIGHT];
     }
 
     @Override
-    protected Object clone() throws CloneNotSupportedException {
+    public Object clone() throws CloneNotSupportedException {
         return super.clone();
     }
 }

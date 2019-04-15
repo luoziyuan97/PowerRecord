@@ -1,12 +1,12 @@
-package com.luoziyuan.powerrecord;
+package com.luoziyuan.powerrecord.service;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.app.usage.UsageStats;
-import android.app.usage.UsageStatsManager;
-import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
@@ -22,6 +22,10 @@ import android.util.SparseArray;
 
 import com.android.internal.os.BatterySipper;
 import com.android.internal.os.BatteryStatsHelper;
+import com.luoziyuan.powerrecord.BuildConfig;
+import com.luoziyuan.powerrecord.data.PowerRecord;
+import com.luoziyuan.powerrecord.R;
+import com.luoziyuan.powerrecord.activity.MainActivity;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -30,8 +34,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -43,13 +45,8 @@ public class MyService extends Service {
     private static final String TAG = "MyService";
 
     private Thread thread = null;
-    private UsageStatsManager usageStatsManager = null;
-    private List<UsageStats> usageStatsList = null;
     private SimpleDateFormat dateFormat = null;
 
-    private CpuStats cpuStats;
-    private HashMap<String, Double> appsPowerConsumption;
-    private HashMap<String, Long> appsUseTime;
     private FileOutputStream outputStream;
 
     private MyBinder myBinder = new MyBinder();
@@ -61,13 +58,11 @@ public class MyService extends Service {
 
     private int interval = 1;           //取样间隔，单位s
 
-    private DecimalFormat twoDecimalPlaces = new DecimalFormat("0.00");
     private DecimalFormat fourDecimalPlaces = new DecimalFormat("0.0000");
 
     private PackageManager packageManager;
-    private SparseArray<String> packageNames;           //过滤掉系统应用(两类)之后的uid与包名映射
-    private SparseArray<String> appNames;               //过滤掉系统应用之后的uid与应用名映射
-    private SparseArray<String> systemApps;             //uid大于10000的系统应用的uid与包名映射
+    private SparseArray<String> packageNames;           //过滤掉系统应用之后的uid与包名映射
+    private SparseArray<String> systemApps;             //包名以android开头的系统应用的uid与包名映射
     private SparseArray<PowerRecord> powerRecords;      //过滤掉系统应用之后的uid与PowerRecord映射
 
     private BatteryStatsHelper batteryStatsHelper;
@@ -84,14 +79,10 @@ public class MyService extends Service {
     @Override
     public void onCreate() {
         Log.d(TAG, "onCreate()");
-        usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
-        appsPowerConsumption = new HashMap<>();
-        appsUseTime = new HashMap<>();
 
         batteryStatsHelper = new BatteryStatsHelper(this);
         packageManager = getPackageManager();
         packageNames = new SparseArray<>();
-        appNames = new SparseArray<>();
         systemApps = new SparseArray<>();
         powerRecords = new SparseArray<>();
         powerRecordList = new ArrayList<>();
@@ -102,6 +93,11 @@ public class MyService extends Service {
         Log.d(TAG, "onStartCommand()");
         if (thread == null)
         {
+            //从SharedPreferences中读取interval，如果没有默认为1s
+            SharedPreferences settings = getSharedPreferences("settings", 0);
+            interval = settings.getInt("interval", 1);
+
+            //初始化BatteryStatsHelper类对象
             batteryStatsHelper.create(intent.getBundleExtra("icircle"));
 
             //创建临时日志文件（位于应用私有目录）
@@ -112,20 +108,18 @@ public class MyService extends Service {
                 e.printStackTrace();
             }
 
-            //记录手机基本信息
+            //记录手机基本信息以及应用版本、记录采样间隔
             String info = "PhoneModel : " + Build.MODEL + "\n";
             info += "Manufacturer : " + Build.MANUFACTURER + "\n";
             info += "Android SDK level : " + Build.VERSION.SDK_INT + "\n";
             info += "PowerRecord version : " + BuildConfig.VERSION_NAME + "\n";
+            info += "Interval : " + interval + "s\n";
             try {
                 outputStream.write(info.getBytes());
             } catch (IOException e) {
                 Log.d(TAG, "failed to write temp log.");
             }
             Log.d(TAG, info);
-
-            //实例化CpuStats对象
-            cpuStats = new CpuStats(this, outputStream);
 
             //创建工作线程
             thread = new BatteryStatsThread();
@@ -162,140 +156,6 @@ public class MyService extends Service {
         stopForeground(true);
     }
 
-    //工作线程
-    class MyThread extends Thread
-    {
-        @Override
-        public void run() {
-            double sum;
-            long useTime;
-            while (!interrupted())    //正常状态通过标志位退出
-            {
-                //获取前台应用
-                long time = System.currentTimeMillis();
-                List<UsageStats> newList = usageStatsManager.queryUsageStats(
-                        UsageStatsManager.INTERVAL_DAILY,
-                        time - 43200000, time);     //beginTime设置为12小时前
-                if (newList != null && newList.size() > 0)
-                    usageStatsList = newList;
-
-                String writeString = "\nTime : ";
-                Log.d(TAG, dateFormat.format(startTime + runningTime * 1000));
-                writeString += dateFormat.format(startTime + runningTime * 1000) + "\n";
-
-                if (usageStatsList != null)
-                {
-                    Collections.sort(usageStatsList, new Comparator<UsageStats>() {
-                        @Override
-                        public int compare(UsageStats o1, UsageStats o2) {
-                            if (o1.getLastTimeUsed() > o2.getLastTimeUsed())
-                                return -1;
-                            else if (o1.getLastTimeUsed() == o2.getLastTimeUsed())
-                                return 0;
-
-                            return 1;
-                        }
-                    });
-
-                    String foregroundPackage = usageStatsList.get(0).getPackageName();
-
-                    Log.d(TAG, "Foreground package : " + foregroundPackage);
-                    writeString += "Foreground package : " + foregroundPackage + "\n";
-
-                    try {
-                        outputStream.write(writeString.getBytes());
-                        writeString = "";
-                    } catch (Exception e) {
-                        Log.d("WriteLog", "failed to write temp log.");
-                    }
-
-                    //获取记录的应用总耗电和使用时间
-                    if (appsPowerConsumption.containsKey(foregroundPackage))
-                        sum = appsPowerConsumption.get(foregroundPackage);
-                    else
-                        sum = 0;
-
-                    if (appsUseTime.containsKey(foregroundPackage))
-                        useTime = appsUseTime.get(foregroundPackage);
-                    else
-                        useTime = 0;
-
-                    double cpuUseRate = cpuStats.getTotalCpuUseRate();
-                    Log.d(TAG, "CpuUseRate : " + fourDecimalPlaces.format(cpuUseRate));
-                    writeString += "CpuUseRate : " + fourDecimalPlaces.format(cpuUseRate) + "\n";
-
-                    double powerConsumption = cpuStats.getTotalCpuPower();
-                    Log.d(TAG, "LastSecondPowerConsumption : "
-                            + twoDecimalPlaces.format(powerConsumption));
-                    writeString += "LastSecondPowerConsumption : "
-                            + twoDecimalPlaces.format(powerConsumption) + "\n";
-
-                    sum += powerConsumption;
-                    Log.d(TAG, "TotalPowerConsumption : " + twoDecimalPlaces.format(sum));
-                    writeString += "TotalPowerConsumption : "
-                            + twoDecimalPlaces.format(sum) + "\n";
-
-                    useTime++;
-                    Log.d(TAG, "TotalUseTime : " + useTime);
-                    writeString += "TotalUseTime : " + useTime + "\n\n";
-
-                    appsPowerConsumption.put(foregroundPackage, sum);
-                    appsUseTime.put(foregroundPackage, useTime);
-
-                    try {
-                        outputStream.write(writeString.getBytes());
-                    } catch (Exception e) {
-                        Log.d("WriteLog", "failed to write temp log.");
-                    }
-                }
-
-                //运行时间加1s
-                runningTime++;
-
-                //计算到下一次记录应该等待的时间
-                long sleepTime = (startTime + runningTime * 1000) - System.currentTimeMillis();
-
-                //记录所用时间超过一秒，跳到下一个记录点
-                if (sleepTime < 0)
-                {
-                    while ((startTime + runningTime * 1000) < System.currentTimeMillis())
-                    {
-                        runningTime++;
-                        Log.w(TAG, "skip 1 second");
-                        try {
-                            outputStream.write("skip 1 second\n".getBytes());
-                        } catch (IOException e) {
-                            Log.d("WriteLog", "failed to write temp log.");
-                        }
-                    }
-                }
-
-                //正常等待至下一个记录点
-                else
-                {
-                    try{
-                        Thread.sleep(sleepTime);
-                    } catch (InterruptedException e){           //阻塞状态通过中断 + break退出
-                        Log.d(TAG, "InterruptedException");
-                        break;
-                    }
-                }
-            }
-
-            Log.d(TAG, "Working thread exits.");
-            try {
-                outputStream.write("Working thread exits.\n".getBytes());
-            } catch (IOException e) {
-                Log.d("WriteLog", "failed to write temp log.");
-            }
-            try {
-                outputStream.close();
-            } catch (IOException e) {
-                Log.d("WriteLog", "failed to close the outputStream.");
-            }
-        }
-    }
-
     class BatteryStatsThread extends Thread
     {
         @Override
@@ -305,8 +165,7 @@ public class MyService extends Service {
                 //记录当前时间
                 StringBuilder writeString = new StringBuilder();
                 writeString.append("\nTime : ");
-                String timePoint = dateFormat.format(
-                        startTime + runningTime * interval * 1000);
+                String timePoint = dateFormat.format(startTime + runningTime * 1000);
                 Log.d(TAG, timePoint);
                 writeString.append(timePoint);
                 writeString.append("\n");
@@ -341,7 +200,8 @@ public class MyService extends Service {
                             } catch (PackageManager.NameNotFoundException e) {
                                 Log.d(TAG, "application not found");
                             }
-                            //uid大于10000的系统应用，存入systemApps并忽略
+
+                            //包名以android开头的uid大于10000的系统应用，存入systemApps并忽略
 //                            if (applicationInfo.isSystemApp())
                             if (packageName.startsWith("android"))
                             {
@@ -349,6 +209,7 @@ public class MyService extends Service {
                                 continue;
 
                             }
+
                             //普通应用
                             else
                             {
@@ -372,8 +233,6 @@ public class MyService extends Service {
                                 else
                                     powerRecord.label = "UNKNOWN";
                                 powerRecords.put(usage.getUid(), powerRecord);
-                                //添加应用名到映射
-                                appNames.put(usage.getUid(), powerRecord.label);
                             }
                         }
                         //忽略uid大于10000且获取不到包名的普通应用（虽然不大可能出现）
@@ -385,17 +244,31 @@ public class MyService extends Service {
                     if (usage.totalPowerMah > 0.01)
                     {
                         PowerRecord powerRecord = powerRecords.get(usage.getUid());
+
+                        //如果当前获取到的该应用耗电值大于首次获取到的耗电量，视为应用启动
+                        //添加到展示列表
+                        if (!powerRecord.isRunning)
+                        {
+                            if (usage.totalPowerMah > powerRecord.startPower[PowerRecord.ALL])
+                            {
+                                powerRecord.isRunning = true;
+                                powerRecordList.add(powerRecord);
+                            }
+                        }
+
                         if (powerRecord.isRunning)
                         {
                             //更新PowerRecord
                             powerRecord.updatePower(usage);
 
+                            //记录此次采样该应用各个组件的耗电量
                             writeString.append("uid : ");
                             writeString.append(usage.getUid());
                             writeString.append("\n");
 
                             for (int i = 0; i < powerRecord.totalPower.length; i++)
                             {
+                                //忽略耗电量低于0.0001的组件
                                 if (powerRecord.totalPower[i] > 0.0001)
                                 {
                                     writeString.append(PowerRecord.componentNames[i]);
@@ -409,20 +282,10 @@ public class MyService extends Service {
                                 }
                             }
                         }
-                        else
-                        {
-                            //如果当前获取到的该应用耗电值大于首次获取到的耗电量，视为应用启动
-                            //添加到展示列表
-                            if (usage.totalPowerMah > powerRecord.startPower[PowerRecord.ALL])
-                            {
-                                powerRecord.isRunning = true;
-                                powerRecordList.add(powerRecord);
-                            }
-                        }
                     }
                 }
 
-                //按照总耗电量的高低降序排列
+                //按照总耗电量的高低降序排列，便于展示
                 Collections.sort(powerRecordList, new Comparator<PowerRecord>() {
                     @Override
                     public int compare(PowerRecord o1, PowerRecord o2) {
@@ -445,13 +308,12 @@ public class MyService extends Service {
                 runningTime += interval;
 
                 //计算到下一次记录应该等待的时间
-                long sleepTime = (startTime + runningTime * interval * 1000)
-                        - System.currentTimeMillis();
+                long sleepTime = (startTime + runningTime * 1000) - System.currentTimeMillis();
 
                 //记录所用时间超过一个间隔时间，跳到下一个记录点
                 if (sleepTime < 0)
                 {
-                    while ((startTime + runningTime * interval * 1000) < System.currentTimeMillis())
+                    while ((startTime + runningTime * 1000) < System.currentTimeMillis())
                     {
                         runningTime += interval;
                         String message = "skip " + interval + " second\n";
@@ -491,7 +353,7 @@ public class MyService extends Service {
     }
 
     //服务类使用的自定义Binder类
-    class MyBinder extends Binder
+    public class MyBinder extends Binder
     {
         public boolean isRunning()
         {
@@ -512,18 +374,6 @@ public class MyService extends Service {
         public long getStartTime()
         {
             return startTime;
-        }
-
-        //获取uid与包名映射
-        public SparseArray<String> getPackageNames()
-        {
-            return packageNames;
-        }
-
-        //获取uid与应用名映射
-        public SparseArray<String> getAppNames()
-        {
-            return appNames;
         }
 
         public ArrayList<PowerRecord> getPowerRecordList()
@@ -554,8 +404,26 @@ public class MyService extends Service {
         builder.setSmallIcon(R.mipmap.ic_battery_round);
         builder.setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_battery));
 
+        //安卓8.0以上需要先创建通知频道，并设置所构建通知的频道Id
+        if (Build.VERSION.SDK_INT>=26)
+        {
+            NotificationManager manager =
+                    (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+            NotificationChannel Channel = new NotificationChannel(
+                    "com.luoziyuan.powerrecord.channel","前台服务",
+                    NotificationManager.IMPORTANCE_HIGH);
+            Channel.setDescription("耗电记录仪前台服务通知");
+            manager.createNotificationChannel(Channel);
+            builder.setChannelId("com.luoziyuan.powerrecord.channel");
+        }
+
         //设置点击通知之后的跳转页面
         Intent intent = new Intent(this, MainActivity.class);
+        //设置跳转模式，使得跳转之后让任务栈中的耗电排行、耗电详情等Activity出栈，显示栈底的MainActivity
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+        //至关重要的一句，加上之后setFlags才起作用！
+        intent.setAction(Intent.ACTION_MAIN);
+
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0,
                 intent, PendingIntent.FLAG_UPDATE_CURRENT);
         builder.setContentIntent(pendingIntent);

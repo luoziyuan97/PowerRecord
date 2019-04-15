@@ -1,22 +1,28 @@
-package com.luoziyuan.powerrecord;
+package com.luoziyuan.powerrecord.activity;
 
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Handler;
 import android.os.IBinder;
+import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ListView;
+
+import com.luoziyuan.powerrecord.service.MyService;
+import com.luoziyuan.powerrecord.adaptor.PowerListAdaptor;
+import com.luoziyuan.powerrecord.R;
 
 public class PowerListActivity extends AppCompatActivity {
 
     private static String TAG = "PowerListActivity";
 
     private ListView powerList;
-    private PowerListAdapter powerListAdapter;
+    private PowerListAdaptor powerListAdapter;
 
     private MyService.MyBinder myBinder;
     private int interval;                   //刷新间隔，单位s
@@ -30,6 +36,14 @@ public class PowerListActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_power_list);
 
+        //上方标题栏添加返回按钮
+        ActionBar actionBar = getSupportActionBar();
+        if (actionBar != null)
+        {
+            actionBar.setHomeButtonEnabled(true);
+            actionBar.setDisplayHomeAsUpEnabled(true);
+        }
+
         //获取ListView并设置点击事件
         powerList = findViewById(R.id.powerList);
         powerList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -42,6 +56,7 @@ public class PowerListActivity extends AppCompatActivity {
             }
         });
 
+        //创建更新排行所用的Runnable对象
         updateListRunnable = new Runnable() {
             @Override
             public void run() {
@@ -53,6 +68,18 @@ public class PowerListActivity extends AppCompatActivity {
                 handler.postDelayed(this, interval * 1000);
             }
         };
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        //标题栏返回按钮点击事件
+        if (item.getItemId() == android.R.id.home)
+        {
+            finish();
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
     }
 
     @Override
@@ -82,7 +109,7 @@ public class PowerListActivity extends AppCompatActivity {
             myBinder = (MyService.MyBinder) service;
 
             //使用获取到的列表数据实例化适配器
-            powerListAdapter = new PowerListAdapter(PowerListActivity.this,
+            powerListAdapter = new PowerListAdaptor(PowerListActivity.this,
                     myBinder.getPowerRecordList());
             //刷新ListView
             powerList.setAdapter(powerListAdapter);
