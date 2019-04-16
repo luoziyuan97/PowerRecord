@@ -31,7 +31,7 @@ import android.widget.RemoteViews;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.luoziyuan.powerrecord.MyAppWidget;
+import com.luoziyuan.powerrecord.appWidget.MyAppWidget;
 import com.luoziyuan.powerrecord.service.MyService;
 import com.luoziyuan.powerrecord.data.PowerRecord;
 import com.luoziyuan.powerrecord.R;
