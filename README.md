@@ -3,8 +3,8 @@ PowerRecord是一款Android耗电统计应用，可以统计Android设备上正�
 
 PowerRecord支持Android 6.0及以上版本的设备。使用前需要进行一些人工操作以获取系统耗电统计权限，请参照应用中提供的使用引导进行操作。
 
-![image]https://github.com/luoziyuan97/PowerRecord/blob/master/screenshots/Screenshot_20190417-185004.png
+![image](https://github.com/luoziyuan97/PowerRecord/blob/master/screenshots/Screenshot_20190417-185004.png)
 
-![image]https://github.com/luoziyuan97/PowerRecord/blob/master/screenshots/Screenshot_20190417-185010.png
+![image](https://github.com/luoziyuan97/PowerRecord/blob/master/screenshots/Screenshot_20190417-185010.png)
 
-![image]https://github.com/luoziyuan97/PowerRecord/blob/master/screenshots/Screenshot_20190417-185031.png
+![image](https://github.com/luoziyuan97/PowerRecord/blob/master/screenshots/Screenshot_20190417-185031.png)
