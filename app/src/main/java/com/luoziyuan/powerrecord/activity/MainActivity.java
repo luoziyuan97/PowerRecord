@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.AlertDialog;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -400,9 +401,15 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 logOut.close();
-                resultInfo = "成功保存日志到:" + writeFile.getAbsolutePath();
+                if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED))
+                    resultInfo = "成功保存日志到SD卡根目录下，文件名:" + writeFile.getName();
+                else
+                    resultInfo = "成功保存日志到内部存储根目录下，文件名:" + writeFile.getName();
             } catch(EOFException e) {
-                resultInfo = "成功保存日志到:" + writeFile.getAbsolutePath();
+                if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED))
+                    resultInfo = "成功保存日志到SD卡根目录下，文件名:" + writeFile.getName();
+                else
+                    resultInfo = "成功保存日志到内部存储根目录下，文件名:" + writeFile.getName();
             } catch(IOException e) {
                 Log.d(TAG, "failed to write log");
             }

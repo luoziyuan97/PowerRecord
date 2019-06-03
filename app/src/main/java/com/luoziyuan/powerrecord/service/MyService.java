@@ -111,7 +111,7 @@ public class MyService extends Service {
             //记录手机基本信息以及应用版本、记录采样间隔
             String info = "PhoneModel : " + Build.MODEL + "\n";
             info += "Manufacturer : " + Build.MANUFACTURER + "\n";
-            info += "Android SDK level : " + Build.VERSION.SDK_INT + "\n";
+            info += "Android API level : " + Build.VERSION.SDK_INT + "\n";
             info += "PowerRecord version : " + BuildConfig.VERSION_NAME + "\n";
             info += "Interval : " + interval + "s\n";
             try {
@@ -184,6 +184,8 @@ public class MyService extends Service {
                     //忽略系统应用
                     if (usage.getUid() < 10000 || (systemApps.get(usage.getUid()) != null))
                         continue;
+//                    if ((systemApps.get(usage.getUid()) != null))
+//                        continue;
 
                     //尝试从已有映射中获取包名
                     packageName = packageNames.get(usage.getUid());
@@ -198,11 +200,12 @@ public class MyService extends Service {
                                 applicationInfo = packageManager.getApplicationInfo(packageName,
                                         0);
                             } catch (PackageManager.NameNotFoundException e) {
-                                Log.d(TAG, "application not found");
+                                Log.d(TAG, packageName + ":application not found");
                             }
 
                             //包名以android开头的uid大于10000的系统应用，存入systemApps并忽略
 //                            if (applicationInfo.isSystemApp())
+//                            if (false)
                             if (packageName.startsWith("android"))
                             {
                                 systemApps.put(usage.getUid(), packageName);

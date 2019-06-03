@@ -15,7 +15,7 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 import com.luoziyuan.powerrecord.service.MyService;
-import com.luoziyuan.powerrecord.adaptor.PowerDetailListAdaptor;
+import com.luoziyuan.powerrecord.adaptor.PowerDetailAdaptor;
 import com.luoziyuan.powerrecord.data.PowerRecord;
 import com.luoziyuan.powerrecord.R;
 
@@ -42,7 +42,7 @@ public class PowerDetailActivity extends AppCompatActivity {
     private TextView totalPowerText;
     private TextView lastIntervalPowerText;
     private ListView powerDetailList;
-    private PowerDetailListAdaptor listAdaptor;
+    private PowerDetailAdaptor listAdaptor;
 
     private DecimalFormat fourDecimalPlaces = new DecimalFormat("0.0000");
 
@@ -151,7 +151,7 @@ public class PowerDetailActivity extends AppCompatActivity {
             lastIntervalPowerText.setText(String.format(Locale.CHINA, "%.4f mAh",
                     powerRecord.lastIntervalPower[PowerRecord.ALL]));
 
-            listAdaptor = new PowerDetailListAdaptor(PowerDetailActivity.this);
+            listAdaptor = new PowerDetailAdaptor(PowerDetailActivity.this);
             listAdaptor.updateData(powerRecord);
             powerDetailList.setAdapter(listAdaptor);
 
